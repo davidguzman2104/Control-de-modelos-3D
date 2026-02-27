@@ -13,192 +13,173 @@ let mixer;
 
 const clock = new THREE.Clock();
 
+// ✅ Cambia aquí el movimiento inicial (debe existir como .fbx en models/fbx/)
 const params = {
-    asset: 'Samba Dancing'
+  asset: 'Samba Dancing',
 };
 
+// ✅ Agrega aquí los nombres de tus movimientos (sin .fbx)
 const assets = [
-    'Samba Dancing',
-    'morph_test',
-    'monkey',
-    'monkey_embedded_texture',
-    'vCube',
+  'Samba Dancing',
+  'Walking',
+  'Running',
+  'Jumping',
+  // 'Idle',
+  // 'Punch',
 ];
-
 
 init();
 
 function init() {
+  const container = document.createElement('div');
+  document.body.appendChild(container);
 
-    const container = document.createElement('div');
-    document.body.appendChild(container);
+  camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 1, 2000);
+  camera.position.set(100, 200, 300);
 
-    camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 1, 2000);
-    camera.position.set(100, 200, 300);
+  scene = new THREE.Scene();
+  scene.background = new THREE.Color(0xa0a0a0);
+  scene.fog = new THREE.Fog(0xa0a0a0, 200, 1000);
 
-    scene = new THREE.Scene();
-    scene.background = new THREE.Color(0xa0a0a0);
-    scene.fog = new THREE.Fog(0xa0a0a0, 200, 1000);
+  const hemiLight = new THREE.HemisphereLight(0xffffff, 0x444444, 5);
+  hemiLight.position.set(0, 200, 0);
+  scene.add(hemiLight);
 
-    const hemiLight = new THREE.HemisphereLight(0xffffff, 0x444444, 5);
-    hemiLight.position.set(0, 200, 0);
-    scene.add(hemiLight);
+  const dirLight = new THREE.DirectionalLight(0xffffff, 5);
+  dirLight.position.set(0, 200, 100);
+  dirLight.castShadow = true;
+  dirLight.shadow.camera.top = 180;
+  dirLight.shadow.camera.bottom = -100;
+  dirLight.shadow.camera.left = -120;
+  dirLight.shadow.camera.right = 120;
+  scene.add(dirLight);
 
-    const dirLight = new THREE.DirectionalLight(0xffffff, 5);
-    dirLight.position.set(0, 200, 100);
-    dirLight.castShadow = true;
-    dirLight.shadow.camera.top = 180;
-    dirLight.shadow.camera.bottom = - 100;
-    dirLight.shadow.camera.left = - 120;
-    dirLight.shadow.camera.right = 120;
-    scene.add(dirLight);
+  // ground
+  const mesh = new THREE.Mesh(
+    new THREE.PlaneGeometry(2000, 2000),
+    new THREE.MeshPhongMaterial({ color: 0x999999, depthWrite: false })
+  );
+  mesh.rotation.x = -Math.PI / 2;
+  mesh.receiveShadow = true;
+  scene.add(mesh);
 
-    // scene.add( new THREE.CameraHelper( dirLight.shadow.camera ) );
+  const grid = new THREE.GridHelper(2000, 20, 0x000000, 0x000000);
+  grid.material.opacity = 0.2;
+  grid.material.transparent = true;
+  scene.add(grid);
 
-    // ground
-    const mesh = new THREE.Mesh(new THREE.PlaneGeometry(2000, 2000), new THREE.MeshPhongMaterial({ color: 0x999999, depthWrite: false }));
-    mesh.rotation.x = - Math.PI / 2;
-    mesh.receiveShadow = true;
-    scene.add(mesh);
+  loader = new FBXLoader(manager);
+  loadAsset(params.asset);
 
-    const grid = new THREE.GridHelper(2000, 20, 0x000000, 0x000000);
-    grid.material.opacity = 0.2;
-    grid.material.transparent = true;
-    scene.add(grid);
+  renderer = new THREE.WebGLRenderer({ antialias: true });
+  renderer.setPixelRatio(window.devicePixelRatio);
+  renderer.setSize(window.innerWidth, window.innerHeight);
+  renderer.setAnimationLoop(animate);
+  renderer.shadowMap.enabled = true;
+  container.appendChild(renderer.domElement);
 
-    loader = new FBXLoader(manager);
-    loadAsset(params.asset);
+  const controls = new OrbitControls(camera, renderer.domElement);
+  controls.target.set(0, 100, 0);
+  controls.update();
 
-    renderer = new THREE.WebGLRenderer({ antialias: true });
-    renderer.setPixelRatio(window.devicePixelRatio);
-    renderer.setSize(window.innerWidth, window.innerHeight);
-    renderer.setAnimationLoop(animate);
-    renderer.shadowMap.enabled = true;
-    container.appendChild(renderer.domElement);
+  window.addEventListener('resize', onWindowResize);
 
-    const controls = new OrbitControls(camera, renderer.domElement);
-    controls.target.set(0, 100, 0);
-    controls.update();
+  // stats
+  stats = new Stats();
+  container.appendChild(stats.dom);
 
-    window.addEventListener('resize', onWindowResize);
+  // GUI
+  const gui = new GUI();
+  gui.add(params, 'asset', assets).onChange((value) => {
+    loadAsset(value);
+  });
 
-    // stats
-    stats = new Stats();
-    container.appendChild(stats.dom);
+  guiMorphsFolder = gui.addFolder('Morphs').hide();
 
-    const gui = new GUI();
-    gui.add(params, 'asset', assets).onChange(function (value) {
+  // ✅ Teclas rápidas (opcional): 1..4 para cambiar animación
+  window.addEventListener('keydown', (e) => {
+    const map = {
+      '1': assets[0],
+      '2': assets[1],
+      '3': assets[2],
+      '4': assets[3],
+    };
 
-        loadAsset(value);
-
-    });
-
-    guiMorphsFolder = gui.addFolder('Morphs').hide();
-
+    if (map[e.key]) {
+      params.asset = map[e.key];
+      loadAsset(params.asset);
+    }
+  });
 }
 
 function loadAsset(asset) {
-
-    loader.load('models/fbx/' + asset + '.fbx', function (group) {
-
-        if (object) {
-
-            object.traverse(function (child) {
-
-                if (child.isSkinnedMesh) {
-
-                    child.skeleton.dispose();
-
-                }
-
-                if (child.material) {
-
-                    const materials = Array.isArray(child.material) ? child.material : [child.material];
-                    materials.forEach(material => {
-
-                        if (material.map) material.map.dispose();
-                        material.dispose();
-
-                    });
-
-                }
-
-                if (child.geometry) child.geometry.dispose();
-
-            });
-
-            scene.remove(object);
-
+  loader.load('models/fbx/' + asset + '.fbx', function (group) {
+    if (object) {
+      object.traverse(function (child) {
+        if (child.isSkinnedMesh) {
+          child.skeleton.dispose();
         }
 
-        //
-
-        object = group;
-
-        if (object.animations && object.animations.length) {
-
-            mixer = new THREE.AnimationMixer(object);
-
-            const action = mixer.clipAction(object.animations[0]);
-            action.play();
-
-        } else {
-
-            mixer = null;
-
+        if (child.material) {
+          const materials = Array.isArray(child.material) ? child.material : [child.material];
+          materials.forEach((material) => {
+            if (material.map) material.map.dispose();
+            material.dispose();
+          });
         }
 
-        guiMorphsFolder.children.forEach((child) => child.destroy());
-        guiMorphsFolder.hide();
+        if (child.geometry) child.geometry.dispose();
+      });
 
-        object.traverse(function (child) {
+      scene.remove(object);
+    }
 
-            if (child.isMesh) {
+    object = group;
 
-                child.castShadow = true;
-                child.receiveShadow = true;
+    if (object.animations && object.animations.length) {
+      mixer = new THREE.AnimationMixer(object);
+      const action = mixer.clipAction(object.animations[0]);
+      action.play();
+    } else {
+      mixer = null;
+    }
 
-                if (child.morphTargetDictionary) {
+    guiMorphsFolder.children.forEach((child) => child.destroy());
+    guiMorphsFolder.hide();
 
-                    guiMorphsFolder.show();
-                    const meshFolder = guiMorphsFolder.addFolder(child.name || child.uuid);
-                    Object.keys(child.morphTargetDictionary).forEach((key) => {
+    object.traverse(function (child) {
+      if (child.isMesh) {
+        child.castShadow = true;
+        child.receiveShadow = true;
 
-                        meshFolder.add(child.morphTargetInfluences, child.morphTargetDictionary[key], 0, 1, 0.01);
+        if (child.morphTargetDictionary) {
+          guiMorphsFolder.show();
+          const meshFolder = guiMorphsFolder.addFolder(child.name || child.uuid);
 
-                    });
-
-                }
-
-            }
-
-        });
-
-        scene.add(object);
-
+          Object.keys(child.morphTargetDictionary).forEach((key) => {
+            meshFolder.add(child.morphTargetInfluences, child.morphTargetDictionary[key], 0, 1, 0.01);
+          });
+        }
+      }
     });
 
+    scene.add(object);
+  });
 }
 
 function onWindowResize() {
+  camera.aspect = window.innerWidth / window.innerHeight;
+  camera.updateProjectionMatrix();
 
-    camera.aspect = window.innerWidth / window.innerHeight;
-    camera.updateProjectionMatrix();
-
-    renderer.setSize(window.innerWidth, window.innerHeight);
-
+  renderer.setSize(window.innerWidth, window.innerHeight);
 }
 
-//
-
 function animate() {
+  const delta = clock.getDelta();
 
-    const delta = clock.getDelta();
+  if (mixer) mixer.update(delta);
 
-    if (mixer) mixer.update(delta);
+  renderer.render(scene, camera);
 
-    renderer.render(scene, camera);
-
-    stats.update();
-
+  stats.update();
 }
